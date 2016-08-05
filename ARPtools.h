@@ -12,6 +12,8 @@ struct relaySession{
 };
 
 int  convertIP2MAC(pcap_t *pcd, const struct in_addr IP, struct ether_addr *MAC);
+void sendFakeARP(pcap_t *pcd, const struct in_addr targetIP, const struct ether_addr targetMAC,
+                              const struct in_addr fakeIP,   const struct ether_addr fakeMAC);
 void makeARPpacket(u_char *packet, const struct in_addr sendIP, const struct ether_addr sendMAC,
                                    const struct in_addr recvIP, const struct ether_addr recvMAC, uint16_t ARPop);
-void relayPackets(pcap_t *pcd, relaySession *relayList, int relayNum);
+void relayPackets(pcap_t *pcd, struct relaySession *relayList, int relayNum);
